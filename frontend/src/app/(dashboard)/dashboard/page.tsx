@@ -1,9 +1,11 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
 
 import { api } from '@/lib/api';
+
 import { Ticket } from '@/types';
 
 import { LoadingSpinner } from '@/components/ui/States';
@@ -18,9 +20,13 @@ import { formatDate, fmt } from '@/lib/utils';
 
 import {
   Ticket as TicketIcon,
-  Users,
-  Monitor,
-  ClipboardList,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Activity,
+  TrendingUp,
+  TimerReset,
+  Gauge,
 } from 'lucide-react';
 
 /* =========================
@@ -43,7 +49,10 @@ const Cell = dynamic(
 );
 
 const ResponsiveContainer = dynamic(
-  () => import('recharts').then((mod) => mod.ResponsiveContainer),
+  () =>
+    import('recharts').then(
+      (mod) => mod.ResponsiveContainer
+    ),
   { ssr: false }
 );
 
@@ -72,13 +81,22 @@ const YAxis = dynamic(
   { ssr: false }
 );
 
+const CartesianGrid = dynamic(
+  () =>
+    import('recharts').then(
+      (mod) => mod.CartesianGrid
+    ),
+  { ssr: false }
+);
+
 /* ========================= */
 
 interface Stats {
   abiertos: number;
-  enProgreso: number;
+  progreso: number;
   resueltos: number;
   criticos: number;
+  total: number;
 }
 
 const COLORS = [
@@ -90,8 +108,11 @@ const COLORS = [
 
 export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] =
+    useState<Stats | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
 
   useEffect(() => {
     api
@@ -99,15 +120,16 @@ export default function DashboardPage() {
       .then((res) => {
         const list = res.data ?? [];
 
-        setTickets(list.slice(0, 5));
+        setTickets(list);
 
         setStats({
           abiertos: list.filter(
             (t) => t.estado === 'ABIERTO'
           ).length,
 
-          enProgreso: list.filter(
-            (t) => t.estado === 'EN_PROGRESO'
+          progreso: list.filter(
+            (t) =>
+              t.estado === 'EN_PROGRESO'
           ).length,
 
           resueltos: list.filter(
@@ -119,63 +141,89 @@ export default function DashboardPage() {
               t.prioridad === 'CRITICA' &&
               t.estado !== 'CERRADO'
           ).length,
+
+          total: list.length,
         });
       })
-      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  const cards = [
-    {
-      label: 'Tickets abiertos',
-      value: stats?.abiertos ?? '-',
-      icon: TicketIcon,
-      color: 'bg-orange-100 text-orange-600',
-    },
+  const resolvedPercent = useMemo(() => {
+    if (!stats?.total) return 0;
 
-    {
-      label: 'En progreso',
-      value: stats?.enProgreso ?? '-',
-      icon: ClipboardList,
-      color: 'bg-yellow-100 text-yellow-600',
-    },
+    return Math.round(
+      (stats.resueltos / stats.total) * 100
+    );
+  }, [stats]);
 
-    {
-      label: 'Resueltos',
-      value: stats?.resueltos ?? '-',
-      icon: Monitor,
-      color: 'bg-green-100 text-green-600',
-    },
+  /* =========================
+     KPI
+  ========================= */
 
-    {
-      label: 'Tickets críticos',
-      value: stats?.criticos ?? '-',
-      icon: Users,
-      color: 'bg-red-100 text-red-600',
-    },
-  ];
+  const kpiResolutionRate =
+    stats?.total
+      ? Math.round(
+          (stats.resueltos / stats.total) * 100
+        )
+      : 0;
 
-  const statusData = [
+  const kpiCriticalRate =
+    stats?.total
+      ? Math.round(
+          (stats.criticos / stats.total) * 100
+        )
+      : 0;
+
+  const kpiPending =
+    (stats?.abiertos || 0) +
+    (stats?.progreso || 0);
+
+  const chartData = [
     {
       name: 'Abiertos',
       value: stats?.abiertos || 0,
     },
-
     {
       name: 'En progreso',
-      value: stats?.enProgreso || 0,
+      value: stats?.progreso || 0,
     },
-
     {
       name: 'Resueltos',
       value: stats?.resueltos || 0,
     },
   ];
 
-  const priorityData = [
+  const cards = [
     {
-      name: 'Críticos',
+      title: 'Tickets abiertos',
+      value: stats?.abiertos || 0,
+      icon: TicketIcon,
+      color:
+        'bg-orange-50 text-orange-600 border-orange-100',
+    },
+
+    {
+      title: 'En progreso',
+      value: stats?.progreso || 0,
+      icon: Clock3,
+      color:
+        'bg-yellow-50 text-yellow-600 border-yellow-100',
+    },
+
+    {
+      title: 'Resueltos',
+      value: stats?.resueltos || 0,
+      icon: CheckCircle2,
+      color:
+        'bg-green-50 text-green-600 border-green-100',
+    },
+
+    {
+      title: 'Críticos',
       value: stats?.criticos || 0,
+      icon: AlertTriangle,
+      color:
+        'bg-red-50 text-red-600 border-red-100',
     },
   ];
 
@@ -183,113 +231,148 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      
+
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-3xl font-bold text-gray-900">
             Dashboard
           </h1>
 
-          <p className="text-sm text-gray-500">
-            Resumen general del sistema de soporte técnico
+          <p className="mt-1 text-sm text-gray-500">
+            Resumen general del sistema
           </p>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 rounded-xl border border-green-100 bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
+          <TrendingUp className="h-4 w-4" />
+          {resolvedPercent}% resueltos
         </div>
       </div>
 
-      {/* STAT CARDS */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {cards.map((c) => (
+      {/* CARDS */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((card) => (
           <div
-            key={c.label}
+            key={card.title}
             className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
           >
             <div
-              className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${c.color}`}
+              className={`inline-flex rounded-xl border p-3 ${card.color}`}
             >
-              <c.icon className="h-5 w-5" />
+              <card.icon className="h-5 w-5" />
             </div>
 
-            <p className="text-3xl font-bold text-gray-900">
-              {c.value}
-            </p>
+            <div className="mt-4">
+              <h3 className="text-3xl font-bold text-gray-900">
+                {card.value}
+              </h3>
 
-            <p className="mt-1 text-sm text-gray-500">
-              {c.label}
-            </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {card.title}
+              </p>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* CHARTS */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        
-        {/* PIE CHART */}
-        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">
-            Estado de tickets
-          </h2>
+      {/* KPI */}
+      <div className="grid gap-4 md:grid-cols-3">
 
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  innerRadius={45}
-                  paddingAngle={4}
-                  dataKey="value"
-                  label={({ name, percent }) =>
-                    `${name} ${(percent || 100).toFixed(0)}%`
-                  }
-                >
-                  {statusData.map((_, index) => (
-                    <Cell
-                      key={index}
-                      fill={COLORS[index % COLORS.length]}
-                      stroke="white"
-                      strokeWidth={2}
-                    />
-                  ))}
-                </Pie>
+        <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
+              <Gauge className="h-5 w-5" />
+            </div>
 
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <span className="text-xs font-medium text-blue-500">
+              KPI
+            </span>
           </div>
 
-          {/* LEYENDA */}
-          <div className="mt-4 flex items-center justify-center gap-6">
-            {statusData.map((item, index) => (
-              <div
-                key={item.name}
-                className="flex items-center gap-2 text-sm text-gray-600"
-              >
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{
-                    backgroundColor:
-                      COLORS[index % COLORS.length],
-                  }}
-                />
+          <h3 className="mt-4 text-3xl font-bold text-gray-900">
+            {kpiResolutionRate}%
+          </h3>
 
-                <span>{item.name}</span>
-              </div>
-            ))}
-          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            Tasa de resolución
+          </p>
         </div>
 
-        {/* BAR CHART */}
-        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">
-            Tickets críticos
-          </h2>
+        <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="rounded-xl bg-red-50 p-3 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
 
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={priorityData}>
+            <span className="text-xs font-medium text-red-500">
+              KPI
+            </span>
+          </div>
+
+          <h3 className="mt-4 text-3xl font-bold text-gray-900">
+            {kpiCriticalRate}%
+          </h3>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Tickets críticos
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="rounded-xl bg-purple-50 p-3 text-purple-600">
+              <TimerReset className="h-5 w-5" />
+            </div>
+
+            <span className="text-xs font-medium text-purple-500">
+              KPI
+            </span>
+          </div>
+
+          <h3 className="mt-4 text-3xl font-bold text-gray-900">
+            {kpiPending}
+          </h3>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Tickets pendientes
+          </p>
+        </div>
+
+      </div>
+
+      {/* GRID */}
+      <div className="grid gap-6 xl:grid-cols-3">
+
+        {/* CHART */}
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm xl:col-span-2">
+
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Estado de tickets
+              </h2>
+
+              <p className="text-sm text-gray-500">
+                Distribución actual
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-orange-50 px-3 py-1 text-xs font-medium text-orange-600">
+              Total: {stats?.total}
+            </div>
+          </div>
+
+          <div className="h-80">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+            >
+              <BarChart data={chartData}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                />
+
                 <XAxis dataKey="name" />
 
                 <YAxis />
@@ -298,10 +381,71 @@ export default function DashboardPage() {
 
                 <Bar
                   dataKey="value"
-                  radius={[8, 8, 0, 0]}
-                  fill="#ef4444"
-                />
+                  radius={[10, 10, 0, 0]}
+                >
+                  {chartData.map(
+                    (_, index) => (
+                      <Cell
+                        key={index}
+                        fill={
+                          COLORS[
+                            index %
+                              COLORS.length
+                          ]
+                        }
+                      />
+                    )
+                  )}
+                </Bar>
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* PIE */}
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Rendimiento
+            </h2>
+
+            <p className="text-sm text-gray-500">
+              Tickets resueltos
+            </p>
+          </div>
+
+          <div className="h-72">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+            >
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  dataKey="value"
+                  label
+                >
+                  {chartData.map(
+                    (_, index) => (
+                      <Cell
+                        key={index}
+                        fill={
+                          COLORS[
+                            index %
+                              COLORS.length
+                          ]
+                        }
+                      />
+                    )
+                  )}
+                </Pie>
+
+                <Tooltip />
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -309,60 +453,98 @@ export default function DashboardPage() {
 
       {/* RECENT TICKETS */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-        
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h2 className="text-sm font-semibold text-gray-900">
-            Tickets recientes
-          </h2>
+
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Actividad reciente
+            </h2>
+
+            <p className="text-sm text-gray-500">
+              Últimos tickets registrados
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Activity className="h-4 w-4" />
+            Tiempo real
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            
+
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-400">
-                <th className="px-5 py-3">Asunto</th>
-                <th className="px-5 py-3">Estado</th>
-                <th className="px-5 py-3">Prioridad</th>
-                <th className="px-5 py-3">Fecha</th>
+              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+
+                <th className="px-5 py-4">
+                  Ticket
+                </th>
+
+                <th className="px-5 py-4">
+                  Estado
+                </th>
+
+                <th className="px-5 py-4">
+                  Prioridad
+                </th>
+
+                <th className="px-5 py-4">
+                  Fecha
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {tickets.map((t) => (
-                <tr
-                  key={t.id}
-                  className="border-b border-gray-50 transition-colors hover:bg-gray-50"
-                >
-                  <td className="px-5 py-4 font-medium text-gray-900">
-                    {t.titulo}
-                  </td>
+              {tickets
+                .slice(0, 6)
+                .map((t) => (
+                  <tr
+                    key={t.id}
+                    className="border-b border-gray-50 transition-all hover:bg-orange-50/40"
+                  >
+                    <td className="px-5 py-4">
 
-                  <td className="px-5 py-4">
-                    <Badge
-                      variant={ticketStatusVariant(
-                        t.estado
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-gray-900">
+                          {t.titulo}
+                        </span>
+
+                        <span className="mt-1 text-xs text-gray-400">
+                          #{t.id.slice(0, 8)}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <Badge
+                        variant={ticketStatusVariant(
+                          t.estado
+                        )}
+                      >
+                        {fmt(t.estado)}
+                      </Badge>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <Badge
+                        variant={ticketPriorityVariant(
+                          t.prioridad
+                        )}
+                      >
+                        {fmt(
+                          t.prioridad
+                        )}
+                      </Badge>
+                    </td>
+
+                    <td className="px-5 py-4 text-gray-400">
+                      {formatDate(
+                        t.createdAt
                       )}
-                    >
-                      {fmt(t.estado)}
-                    </Badge>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <Badge
-                      variant={ticketPriorityVariant(
-                        t.prioridad
-                      )}
-                    >
-                      {fmt(t.prioridad)}
-                    </Badge>
-                  </td>
-
-                  <td className="px-5 py-4 text-gray-400">
-                    {formatDate(t.createdAt)}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
 
           </table>
