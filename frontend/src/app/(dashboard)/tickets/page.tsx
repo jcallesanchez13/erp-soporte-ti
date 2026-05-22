@@ -117,35 +117,35 @@ export default function TicketsPage() {
     useState('TODAS');
 
   const load = () =>
-    Promise.all([
-      api
-        .get<Ticket[]>('/tickets')
-        .then((r) =>
-          setTickets(r.data ?? [])
-        ),
+  Promise.all([
+    api
+      .get<Ticket[]>('/api/tickets')
+      .then((r) =>
+        setTickets(r.data ?? [])
+      ),
 
-      api
-        .get<Client[]>('/clients')
-        .then((r) =>
-          setClients(r.data ?? [])
-        ),
+    api
+      .get<Client[]>('/api/clients')
+      .then((r) =>
+        setClients(r.data ?? [])
+      ),
 
-      api
-        .get<Asset[]>('/assets')
-        .then((r) =>
-          setAssets(r.data ?? [])
-        ),
+    api
+      .get<Asset[]>('/api/assets')
+      .then((r) =>
+        setAssets(r.data ?? [])
+      ),
 
-      api
-        .get<Technician[]>(
-          '/technicians'
-        )
-        .then((r) =>
-          setTechs(r.data ?? [])
-        ),
-    ]).finally(() =>
-      setLoading(false)
-    );
+    api
+      .get<Technician[]>(
+        '/api/technicians'
+      )
+      .then((r) =>
+        setTechs(r.data ?? [])
+      ),
+  ]).finally(() =>
+    setLoading(false)
+  );
 
   useEffect(() => {
     load();
@@ -176,7 +176,7 @@ export default function TicketsPage() {
     };
 
     try {
-      await api.post('/tickets', body);
+      await api.post('/api/tickets', body);
 
       await load();
 
@@ -204,7 +204,7 @@ export default function TicketsPage() {
 
       try {
         await api.patch(
-          `/tickets/${statusModal.id}/status`,
+          `/api/tickets/${statusModal.id}/status`,
           {
             estado: newStatus,
           }

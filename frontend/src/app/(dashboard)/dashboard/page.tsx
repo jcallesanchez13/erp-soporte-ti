@@ -1,11 +1,9 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-
 import { useEffect, useMemo, useState } from 'react';
 
 import { api } from '@/lib/api';
-
 import { Ticket } from '@/types';
 
 import { LoadingSpinner } from '@/components/ui/States';
@@ -116,7 +114,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api
-      .get<Ticket[]>('/tickets')
+      .get<Ticket[]>('/api/tickets')
       .then((res) => {
         const list = res.data ?? [];
 
