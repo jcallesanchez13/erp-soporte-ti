@@ -1,6 +1,6 @@
 import { ApiResponse } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://erp-soporte-ti.onrender.com";
 
 const getToken = (): string | null => {
   if (typeof window === 'undefined') return null;
