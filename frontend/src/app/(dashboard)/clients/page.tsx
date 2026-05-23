@@ -32,7 +32,7 @@ export default function ClientsPage() {
 
   const load = () =>
     api
-      .get<Client[]>('/api/clients')
+      .get<Client[]>('/clients')
       .then((r) => setClients(r.data ?? []))
       .finally(() => setLoading(false));
 
@@ -62,9 +62,9 @@ export default function ClientsPage() {
 
     try {
       if (editing) {
-        await api.put(`/api/clients/${editing.id}`, form);
+        await api.put(`/clients/${editing.id}`, form);
       } else {
-        await api.post('/api/clients', form);
+        await api.post('/clients', form);
       }
 
       await load();
@@ -79,7 +79,7 @@ export default function ClientsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Eliminar cliente?')) return;
 
-    await api.delete(`/api/clients/${id}`);
+    await api.delete(`/clients/${id}`);
     await load();
   };
 
