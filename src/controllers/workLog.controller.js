@@ -5,16 +5,6 @@ const ServiceOrderModel   = require('../models/serviceOrder.model');
 const { createHttpError } = require('../middlewares/error.middleware');
 const { matchedData }     = require('express-validator');
 
-/**
- * Controlador del módulo WorkLog.
- *
- * Reglas de negocio aplicadas:
- *  - Solo se pueden registrar horas en órdenes PENDIENTE o EN_PROGRESO.
- *  - Solo el técnico asignado a la orden o un ADMIN puede registrar horas.
- *  - Solo el técnico que creó el registro o un ADMIN puede editarlo/eliminarlo.
- *  - horasTrabajadas > 0 y <= 24 (validado en route, reforzado aquí).
- */
-
 const ESTADOS_PERMITIDOS = ['PENDIENTE', 'EN_PROGRESO'];
 
 // GET /api/work-logs
@@ -46,6 +36,10 @@ const create = async (req, res, next) => {
   try {
     const body = matchedData(req);
 
+    // Convertir tipos para Prisma
+    if (body.fecha) body.fecha = new Date(body.fecha + 'T00:00:00.000Z');
+    if (body.horasTrabajadas) body.horasTrabajadas = parseFloat(body.horasTrabajadas);
+
     // Verificar que la orden existe
     const orden = await ServiceOrderModel.findById(body.ordenServicioId);
     if (!orden) {
@@ -64,8 +58,6 @@ const create = async (req, res, next) => {
       return next(createHttpError(403, 'Solo el técnico asignado a la orden puede registrar horas.'));
     }
 
-    // El tecnicoId del log debe ser siempre el usuario autenticado
-    // (un admin puede registrar en nombre de cualquier técnico solo si lo especifica explícitamente)
     const tecnicoId = body.tecnicoId ?? req.user.id;
 
     const log = await WorkLogModel.create({ ...body, tecnicoId });
@@ -80,6 +72,10 @@ const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const body    = matchedData(req, { includeOptionals: false });
+
+    // Convertir tipos para Prisma
+    if (body.fecha) body.fecha = new Date(body.fecha + 'T00:00:00.000Z');
+    if (body.horasTrabajadas) body.horasTrabajadas = parseFloat(body.horasTrabajadas);
 
     const existing = await WorkLogModel.findById(id);
     if (!existing) {
