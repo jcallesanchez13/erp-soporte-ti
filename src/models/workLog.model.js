@@ -1,93 +1,127 @@
 'use strict';
 
-const prisma = require('../config/database');
+const WorkLogModel        = require('../models/workLog.model');
+const ServiceOrderModel   = require('../models/serviceOrder.model');
+const { createHttpError } = require('../middlewares/error.middleware');
+const { matchedData }     = require('express-validator');
 
-/**
- * Capa de acceso a datos para el módulo WorkLog.
- * Cada registro está asociado a una ServiceOrder y un Technician.
- */
+const ESTADOS_PERMITIDOS = ['PENDIENTE', 'EN_PROGRESO'];
 
-const includeRelaciones = {
-  ordenServicio: {
-    select: { id: true, numero: true, estado: true, tipo: true },
-  },
-  tecnico: {
-    select: { id: true, nombre: true, apellido: true },
-  },
+// GET /api/work-logs
+const getAll = async (req, res, next) => {
+  try {
+    const { ordenServicioId, tecnicoId, fecha } = req.query;
+    const logs = await WorkLogModel.findAll({ ordenServicioId, tecnicoId, fecha });
+    res.status(200).json({ success: true, data: logs });
+  } catch (error) {
+    next(error);
+  }
 };
 
-const WorkLogModel = {
-  /**
-   * Lista registros no eliminados con filtros opcionales.
-   * @param {object} filters - { ordenServicioId, tecnicoId, fecha }
-   */
-  findAll: (filters = {}) => {
-    const where = { deletedAt: null };
-    if (filters.ordenServicioId) where.ordenServicioId = filters.ordenServicioId;
-    if (filters.tecnicoId)       where.tecnicoId       = filters.tecnicoId;
-    if (filters.fecha) {
-      // Filtrar por día exacto
-      const dia       = new Date(filters.fecha);
-      const diaSig    = new Date(dia);
-      diaSig.setDate(diaSig.getDate() + 1);
-      where.fecha = { gte: dia, lt: diaSig };
+// GET /api/work-logs/:id
+const getById = async (req, res, next) => {
+  try {
+    const log = await WorkLogModel.findById(req.params.id);
+    if (!log) {
+      return next(createHttpError(404, 'Registro de trabajo no encontrado.'));
+    }
+    res.status(200).json({ success: true, data: log });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/work-logs
+const create = async (req, res, next) => {
+  try {
+    const body = matchedData(req);
+
+    // Convertir fecha string a objeto Date para Prisma
+    if (body.fecha) body.fecha = new Date(body.fecha);
+
+    // Verificar que la orden existe
+    const orden = await ServiceOrderModel.findById(body.ordenServicioId);
+    if (!orden) {
+      return next(createHttpError(404, 'La orden de servicio especificada no existe.'));
     }
 
-    return prisma.workLog.findMany({
-      where,
-      include: includeRelaciones,
-      orderBy: { fecha: 'desc' },
-    });
-  },
+    // Solo se registran horas en órdenes activas
+    if (!ESTADOS_PERMITIDOS.includes(orden.estado)) {
+      return next(createHttpError(400, `No se pueden registrar horas en una orden con estado '${orden.estado}'.`));
+    }
 
-  /**
-   * Busca un WorkLog por ID.
-   */
-  findById: (id) =>
-    prisma.workLog.findFirst({
-      where:   { id, deletedAt: null },
-      include: includeRelaciones,
-    }),
+    // Solo el técnico asignado a la orden o un ADMIN puede registrar horas
+    const esAdmin   = req.user.rol === 'ADMIN';
+    const esTecnico = orden.tecnico.id === req.user.id;
+    if (!esAdmin && !esTecnico) {
+      return next(createHttpError(403, 'Solo el técnico asignado a la orden puede registrar horas.'));
+    }
 
-  /**
-   * Suma total de horas trabajadas en una orden de servicio.
-   * Útil para mostrar en el detalle de la orden.
-   */
-  sumHorasByOrden: async (ordenServicioId) => {
-    const result = await prisma.workLog.aggregate({
-      where:  { ordenServicioId, deletedAt: null },
-      _sum:   { horasTrabajadas: true },
-    });
-    return result._sum.horasTrabajadas ?? 0;
-  },
+    const tecnicoId = body.tecnicoId ?? req.user.id;
 
-  /**
-   * Crea un nuevo registro de horas.
-   */
-  create: (data) =>
-    prisma.workLog.create({
-      data,
-      include: includeRelaciones,
-    }),
-
-  /**
-   * Actualiza un registro de horas.
-   */
-  update: (id, data) =>
-    prisma.workLog.update({
-      where:   { id },
-      data,
-      include: includeRelaciones,
-    }),
-
-  /**
-   * Soft delete del registro.
-   */
-  softDelete: (id) =>
-    prisma.workLog.update({
-      where: { id },
-      data:  { deletedAt: new Date() },
-    }),
+    const log = await WorkLogModel.create({ ...body, tecnicoId });
+    res.status(201).json({ success: true, data: log });
+  } catch (error) {
+    next(error);
+  }
 };
 
-module.exports = WorkLogModel;
+// PUT /api/work-logs/:id
+const update = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const body    = matchedData(req, { includeOptionals: false });
+
+    // Convertir fecha string a objeto Date para Prisma
+    if (body.fecha) body.fecha = new Date(body.fecha);
+
+    const existing = await WorkLogModel.findById(id);
+    if (!existing) {
+      return next(createHttpError(404, 'Registro de trabajo no encontrado.'));
+    }
+
+    // Solo el técnico dueño del registro o un ADMIN puede editarlo
+    const esAdmin  = req.user.rol === 'ADMIN';
+    const esDuenio = existing.tecnico.id === req.user.id;
+    if (!esAdmin && !esDuenio) {
+      return next(createHttpError(403, 'No tienes permiso para editar este registro.'));
+    }
+
+    // Verificar que la orden sigue activa
+    const orden = await ServiceOrderModel.findById(existing.ordenServicioId);
+    if (orden && !ESTADOS_PERMITIDOS.includes(orden.estado)) {
+      return next(createHttpError(400, `No se puede editar un registro de una orden en estado '${orden.estado}'.`));
+    }
+
+    const updated = await WorkLogModel.update(id, body);
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/work-logs/:id
+const remove = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await WorkLogModel.findById(id);
+    if (!existing) {
+      return next(createHttpError(404, 'Registro de trabajo no encontrado.'));
+    }
+
+    // Solo el técnico dueño o un ADMIN puede eliminar
+    const esAdmin  = req.user.rol === 'ADMIN';
+    const esDuenio = existing.tecnico.id === req.user.id;
+    if (!esAdmin && !esDuenio) {
+      return next(createHttpError(403, 'No tienes permiso para eliminar este registro.'));
+    }
+
+    await WorkLogModel.softDelete(id);
+    res.status(200).json({ success: true, message: 'Registro de trabajo eliminado correctamente.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getAll, getById, create, update, remove };
